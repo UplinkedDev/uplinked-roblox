@@ -11,6 +11,16 @@ Uplinked enables live debugging of your published Roblox game easy. I built it b
 
 
 
+## Screenshots
+
+![In-game session button](screenshots/Game.png)
+
+![Live Logs](screenshots/Uplinked_Logs.png)
+
+![Remote Actions](screenshots/Uplinked_Actions.png)
+
+![Instance Inspector](screenshots/Uplinked_Inspect.png)
+
 ## Features
 
 - **Live Logs** — Stream server and client logs with filtering to another device

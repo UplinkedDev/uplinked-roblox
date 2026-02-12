@@ -34,21 +34,6 @@ I'm planning to open source the backend soon if you want to control where your d
 
 ## Installation
 
-### Wally (Recommended)
-
-Add to your `wally.toml`:
-
-```toml
-[dependencies]
-Uplinked = "UplinkedDev/uplinked@0.1.0"
-```
-
-Then run:
-
-```bash
-wally install
-```
-
 ### Roblox Model
 
 Download `Uplinked.rbxm` from this repository and insert it into `ReplicatedStorage`.

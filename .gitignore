@@ -1,0 +1,13 @@
+# Rojo
+*.rbxm
+*.rbxmx
+*.rbxl
+*.rbxlx
+
+# Wally
+Packages/
+DevPackages/
+wally.lock
+
+# Aftman / Foreman
+~/.aftman/

@@ -1,0 +1,9 @@
+[package]
+name = "GrizzlyStudios/uplinked"
+version = "0.1.0"
+registry = "https://github.com/UplinkGames/wally-index"
+realm = "shared"
+description = "Live server logs, remote actions, and instance inspection for Roblox games"
+license = "MIT"
+
+[dependencies]

@@ -11,3 +11,4 @@ wally.lock
 
 # Aftman / Foreman
 ~/.aftman/
+.DS_Store

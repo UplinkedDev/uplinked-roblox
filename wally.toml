@@ -1,5 +1,5 @@
 [package]
-name = "GrizzlyStudios/uplinked"
+name = "UplinkedDev/uplinked"
 version = "0.1.0"
 registry = "https://github.com/UplinkGames/wally-index"
 realm = "shared"

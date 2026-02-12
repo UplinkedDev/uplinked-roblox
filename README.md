@@ -1,6 +1,6 @@
 # Uplinked
 
-Uplinked enables live debugging of your published Roblox game easy. I built it because when I tested on physical devices (mobile, console, VR) I wanted to see real-time logs on another screen, I wanted to trigger remote quick actions without creating dev UI in-game, and I wanted to be able to inpsect the workspace tree for the client and server.
+Uplinked enables easy live debugging of your published Roblox game. I built it because when I tested on physical devices (mobile, console, VR) I wanted to see real-time logs on another screen, I wanted to trigger remote quick actions without creating dev UI in-game, and I wanted to be able to inpsect the workspace tree for the client and server.
 
 ## How it works
 1. Setup the module in your game. Set an admin password that only you know.

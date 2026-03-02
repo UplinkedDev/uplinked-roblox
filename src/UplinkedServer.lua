@@ -28,6 +28,7 @@ local remoteEvent = nil
 local activeSessions = {}
 local playerLogRates = {} -- player -> { count: number, resetTime: number }
 local playerDeviceInfo = {} -- player -> { Locale, Resolution, GraphicsQuality, SafeArea, Inputs }
+local lastBroadcastSchemaVersion = 0
 local globalLogBuffer = {} -- all server logs since game start
 local MAX_GLOBAL_LOG_BUFFER = 5000
 
@@ -218,6 +219,20 @@ function UplinkedServer.Start(options)
 				endSession(player)
 				remoteEvent:FireClient(player, { Type = "SessionEnded" })
 			end
+		elseif payload.Type == "GetAdminSchema" then
+			remoteEvent:FireClient(player, {
+				Type = "AdminSchema",
+				Data = UplinkedActions.GetSchema(),
+			})
+		elseif payload.Type == "DispatchAction" then
+			local data = payload.Data
+			if type(data) ~= "table" then return end
+			if type(data.Section) ~= "string" then return end
+			if type(data.Group) ~= "string" then return end
+			if type(data.Action) ~= "string" then return end
+			task.spawn(function()
+				UplinkedActions.Dispatch(data.Section, data.Group, data.Action, player)
+			end)
 		elseif payload.Type == "RequestSession" then
 			if activeSessions[player] then
 				remoteEvent:FireClient(player, {
@@ -282,6 +297,15 @@ function UplinkedServer.Start(options)
 
 			local currentSchemaVersion = UplinkedActions.GetSchemaVersion()
 			local serverInfo = getServerInfo()
+
+			-- Broadcast schema changes to all players (for in-game admin UI)
+			if currentSchemaVersion ~= lastBroadcastSchemaVersion then
+				lastBroadcastSchemaVersion = currentSchemaVersion
+				local schema = UplinkedActions.GetSchema()
+				for _, p in Players:GetPlayers() do
+					remoteEvent:FireClient(p, { Type = "AdminSchema", Data = schema })
+				end
+			end
 
 			for player, session in pairs(activeSessions) do
 				local schemaChanged = currentSchemaVersion ~= session.LastSchemaVersion

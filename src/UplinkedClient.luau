@@ -173,6 +173,10 @@ function Uplinked.Start(opts)
 	remoteEvent.OnClientEvent:Connect(function(payload)
 		if payload.Type == "SessionCode" then
 			sessionActive = true
+			if not sessionStarted then
+				sessionStarted = true
+				startLogging()
+			end
 			sendPlayerInfo()
 			if button then
 				icon.ImageColor3 = Color3.fromHex("#37FF7D")
@@ -201,6 +205,11 @@ function Uplinked.Start(opts)
 			end
 			if options.OnError then
 				options.OnError(payload.Message)
+			end
+		elseif payload.Type == "SessionTeleporting" then
+			sessionActive = false
+			if options and options.OnTeleporting then
+				options.OnTeleporting()
 			end
 		elseif payload.Type == "InspectRequest" then
 			local result = UplinkedInspect.HandleRequest(payload.Data)

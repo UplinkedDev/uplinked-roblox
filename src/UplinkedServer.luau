@@ -3,6 +3,7 @@ local LogService = game:GetService("LogService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
 
 local UplinkedServer = {}
 
@@ -11,6 +12,7 @@ local UplinkedActions
 local UplinkedInspect
 
 local REMOTE_EVENT_NAME = "UplinkedEvent"
+local TELEPORT_DATA_KEY = "__UplinkedSession"
 local MAX_CLIENT_LOG_LENGTH = 1000
 local MAX_CLIENT_LOGS_PER_INTERVAL = 50
 local LOG_RATE_INTERVAL = 2
@@ -28,7 +30,7 @@ local remoteEvent = nil
 local activeSessions = {}
 local playerLogRates = {} -- player -> { count: number, resetTime: number }
 local playerDeviceInfo = {} -- player -> { Locale, Resolution, GraphicsQuality, SafeArea, Inputs }
-local lastBroadcastSchemaVersion = 0
+local teleportingPlayers = {} -- player -> true, flagged by PrepareTeleport
 local globalLogBuffer = {} -- all server logs since game start
 local MAX_GLOBAL_LOG_BUFFER = 5000
 
@@ -125,13 +127,16 @@ local function bufferClientLog(message, level, player)
 	end
 end
 
-local function endSession(player)
+local function endSession(player, skipApiCall)
 	local session = activeSessions[player]
 	if not session then return end
 
 	activeSessions[player] = nil
 	playerLogRates[player] = nil
 	playerDeviceInfo[player] = nil
+
+	if skipApiCall then return end
+
 	local ok, err = pcall(function()
 		HttpService:PostAsync(
 			config.BackendUrl .. "/api/end-session",
@@ -219,20 +224,6 @@ function UplinkedServer.Start(options)
 				endSession(player)
 				remoteEvent:FireClient(player, { Type = "SessionEnded" })
 			end
-		elseif payload.Type == "GetAdminSchema" then
-			remoteEvent:FireClient(player, {
-				Type = "AdminSchema",
-				Data = UplinkedActions.GetSchema(),
-			})
-		elseif payload.Type == "DispatchAction" then
-			local data = payload.Data
-			if type(data) ~= "table" then return end
-			if type(data.Section) ~= "string" then return end
-			if type(data.Group) ~= "string" then return end
-			if type(data.Action) ~= "string" then return end
-			task.spawn(function()
-				UplinkedActions.Dispatch(data.Section, data.Group, data.Action, player)
-			end)
 		elseif payload.Type == "RequestSession" then
 			if activeSessions[player] then
 				remoteEvent:FireClient(player, {
@@ -281,12 +272,66 @@ function UplinkedServer.Start(options)
 	end)
 
 	Players.PlayerRemoving:Connect(function(player)
-		endSession(player)
+		if teleportingPlayers[player] then
+			teleportingPlayers[player] = nil
+			endSession(player, true)
+		else
+			endSession(player)
+		end
 	end)
 
 	game:BindToClose(function()
 		for player in pairs(activeSessions) do
-			endSession(player)
+			if teleportingPlayers[player] then
+				endSession(player, true)
+			else
+				endSession(player)
+			end
+		end
+	end)
+
+	-- Resume sessions for players arriving via teleport
+	Players.PlayerAdded:Connect(function(player)
+		local joinData = player:GetJoinData()
+		local teleportData = joinData and joinData.TeleportData
+		if type(teleportData) ~= "table" then return end
+
+		local sessionMap = teleportData[TELEPORT_DATA_KEY]
+		if type(sessionMap) ~= "table" then return end
+
+		local sessionData = sessionMap[tostring(player.UserId)]
+		if not sessionData then return end
+		if type(sessionData.Code) ~= "string" or type(sessionData.Password) ~= "string" then return end
+
+		local replayedLogs = {}
+		for _, log in ipairs(globalLogBuffer) do
+			table.insert(replayedLogs, log)
+		end
+
+		activeSessions[player] = {
+			Code = sessionData.Code,
+			Password = sessionData.Password,
+			LogBuffer = replayedLogs,
+			LastSchemaVersion = 0,
+		}
+
+		task.delay(1, function()
+			if activeSessions[player] and remoteEvent then
+				remoteEvent:FireClient(player, {
+					Type = "SessionCode",
+					Code = sessionData.Code,
+				})
+			end
+		end)
+
+		print("Uplinked: session resumed for " .. player.Name .. " (teleport)")
+	end)
+
+	-- Unflag player if teleport fails so future disconnect ends the session properly
+	TeleportService.TeleportInitFailed:Connect(function(player)
+		if teleportingPlayers[player] then
+			teleportingPlayers[player] = nil
+			warn("Uplinked: teleport failed for " .. player.Name .. ", session preserved locally")
 		end
 	end)
 
@@ -297,15 +342,6 @@ function UplinkedServer.Start(options)
 
 			local currentSchemaVersion = UplinkedActions.GetSchemaVersion()
 			local serverInfo = getServerInfo()
-
-			-- Broadcast schema changes to all players (for in-game admin UI)
-			if currentSchemaVersion ~= lastBroadcastSchemaVersion then
-				lastBroadcastSchemaVersion = currentSchemaVersion
-				local schema = UplinkedActions.GetSchema()
-				for _, p in Players:GetPlayers() do
-					remoteEvent:FireClient(p, { Type = "AdminSchema", Data = schema })
-				end
-			end
 
 			for player, session in pairs(activeSessions) do
 				local schemaChanged = currentSchemaVersion ~= session.LastSchemaVersion
@@ -408,6 +444,36 @@ function UplinkedServer.Start(options)
 	end)
 
 	print("Uplinked: Server started")
+end
+
+function UplinkedServer.PrepareTeleport(player, teleportOptions)
+	assert(teleportOptions, "PrepareTeleport requires a TeleportOptions instance")
+
+	local session = activeSessions[player]
+	if not session then
+		warn("Uplinked: no active session for " .. player.Name .. ", teleporting without session data")
+		return teleportOptions
+	end
+
+	teleportingPlayers[player] = true
+
+	local existingData = teleportOptions:GetTeleportData() or {}
+	if type(existingData) ~= "table" then
+		existingData = { _originalData = existingData }
+	end
+
+	existingData[TELEPORT_DATA_KEY] = existingData[TELEPORT_DATA_KEY] or {}
+	existingData[TELEPORT_DATA_KEY][tostring(player.UserId)] = {
+		Code = session.Code,
+		Password = session.Password,
+	}
+	teleportOptions:SetTeleportData(existingData)
+
+	if remoteEvent then
+		remoteEvent:FireClient(player, { Type = "SessionTeleporting" })
+	end
+
+	return teleportOptions
 end
 
 return UplinkedServer
